@@ -183,14 +183,18 @@ if uploaded_zip and st.session_state.df_resumo is not None:
                     spi_df, estatisticas_spi = indice_spi(df_spi)
 
                     st.markdown("### Índice de Precipitação Padronizado (SPI)")
-                    fig_spi, ax_spi = plt.subplots(figsize=(12, 4))
-                    ax_spi.plot(spi_df["AnoMes"].astype(str), spi_df["SPI"], marker="o", linestyle="-")
-                    ax_spi.axhline(0, color="black", linestyle="--")
-                    ax_spi.set_title(f"SPI - {filtro_nome}")
-                    ax_spi.set_ylabel("SPI")
-                    ax_spi.set_xticks(spi_df["AnoMes"].astype(str)[::max(1, len(spi_df)//12)])
-                    ax_spi.tick_params(axis='x', rotation=45)
-                    st.pyplot(save_figure_temp(fig_spi))
+                    plt.figure(figsize=(12, 4))
+                    plt.plot(spi_df["AnoMes"].astype(str), spi_df["SPI"], marker="o", linestyle="-")
+                    plt.axhline(0, color="black", linestyle="--")
+                    plt.title(f"SPI - {filtro_nome}")
+                    plt.ylabel("SPI")
+                    plt.xticks(
+                        ticks=range(0, len(spi_df), max(1, len(spi_df) // 12)),
+                        labels=spi_df["AnoMes"].astype(str)[::max(1, len(spi_df) // 12)],
+                        rotation=45
+                    )
+                    plt.tight_layout()
+                    st.pyplot(plt)
 
                     st.markdown("#### Estatísticas por mês (SPI)")
                     st.table(estatisticas_spi.reset_index(drop=True))
@@ -208,6 +212,11 @@ if uploaded_zip and st.session_state.df_resumo is not None:
                 
                 st.write("")
                 st.markdown(f"**Parâmetros IDF (ajustados via otimização):**")
+                st.markdown(f"- a = `{a:.4f}`")
+                st.markdown(f"- b = `{b:.4f}`")
+                st.markdown(f"- c = `{c:.4f}`")
+                st.markdown(f"- d = `{d:.4f}`")
+
                 equacao_idf = (
                     r"I = \frac{{{:.2f} \cdot T_r^{{{:.2f}}}}}{{(t + {:.2f})^{{{:.2f}}}}}"
                     .format(a, b, c, d)
