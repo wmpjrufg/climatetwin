@@ -237,7 +237,7 @@ if uploaded_zip and st.session_state.df_resumo is not None:
             with zipfile.ZipFile(buffer_zip, "w") as zip_file:
                 # 1. Gráfico do SPI
                 fig_spi_bytes = io.BytesIO()
-                fig_spi.savefig(fig_spi_bytes, format='png', bbox_inches='tight')
+                plt.savefig(fig_spi_bytes, format='png', bbox_inches='tight')
                 fig_spi_bytes.seek(0)
                 zip_file.writestr("spi_grafico.png", fig_spi_bytes.read())
 
