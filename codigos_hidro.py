@@ -2,7 +2,7 @@
 Módulo de funções hidrológicas para uso em aplicativos Streamlit
 Inclui cálculo de SPI, IDF, hmax, desagregação de precipitação e ajuste de parâmetros IDF
 """
-
+import tempfile
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
@@ -137,3 +137,9 @@ def indice_spi(df_inmet):
     spi_df = pd.DataFrame({'AnoMes': precip_mensal.index, 'PrecipitaçãoMensal': precip_mensal.values, 'SPI': spi_mensal})
     estatisticas_df = pd.DataFrame(estatisticas)
     return spi_df, estatisticas_df
+
+def save_figure_temp(fig):
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    fig.savefig(temp_file.name)
+    temp_file.close()
+    return temp_file.name

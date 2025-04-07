@@ -11,7 +11,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 from streamlit_folium import st_folium
-from codigos_hidro import indice_spi, calculo_precipitacoes, problema_inverso_idf
+from codigos_hidro import indice_spi, calculo_precipitacoes, problema_inverso_idf, save_figure_temp
 
 
 st.set_page_config(page_title="Análise de Estações BDMET", layout="wide")
@@ -190,7 +190,7 @@ if uploaded_zip and st.session_state.df_resumo is not None:
                     ax_spi.set_ylabel("SPI")
                     ax_spi.set_xticks(spi_df["AnoMes"].astype(str)[::max(1, len(spi_df)//12)])
                     ax_spi.tick_params(axis='x', rotation=45)
-                    st.pyplot(fig_spi)
+                    st.pyplot(save_figure_temp(fig_spi))
 
                     st.markdown("#### Estatísticas por mês (SPI)")
                     st.table(estatisticas_spi.reset_index(drop=True))
