@@ -6,3 +6,5 @@ streamlit_folium
 geopandas
 shapely
 openpyxl
+scipy
+matplotlib
