@@ -325,8 +325,9 @@ if uploaded_zip and st.session_state.df_resumo is not None:
 
     # --- Seleção e download dos dados completos
     st.subheader("Exportar Dados")
-    opcoes_rotuladas = [f"{row['nome']} ({row['codigo_estacao']})" for _, row in df_resumo.iterrows()]
-    mapa_codigo_por_label = {f"{row['nome']} ({row['codigo_estacao']})": row['codigo_estacao'] for _, row in df_resumo.iterrows()}
+    df_ordenado = df_resumo.sort_values("codigo_estacao")
+    opcoes_rotuladas = [f"{row['nome']} ({row['codigo_estacao']})" for _, row in df_ordenado.iterrows()]
+    mapa_codigo_por_label = {f"{row['nome']} ({row['codigo_estacao']})": row['codigo_estacao'] for _, row in df_ordenado.iterrows()}
     selecao_rotulada = st.multiselect("Escolha a estação:", opcoes_rotuladas)
     selecao = [mapa_codigo_por_label[r] for r in selecao_rotulada if r in mapa_codigo_por_label]
 
