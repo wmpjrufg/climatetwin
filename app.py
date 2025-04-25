@@ -193,7 +193,8 @@ if uploaded_zip and st.session_state.df_resumo is not None:
             popup=f"{row['nome']} ({row['codigo_estacao']})\nSituação: {row['situacao']}"
         ).add_to(m)
 
-    st_folium(m, width=700, height=500)
+    st_folium(m, width=1500, height=500)
+
 
 
     # --- SPI e IDF para a cidade selecionada ---
@@ -222,6 +223,8 @@ if uploaded_zip and st.session_state.df_resumo is not None:
                         spi_df, estatisticas_spi = indice_spi(df_spi)
 
                         st.markdown("### Índice de Precipitação Padronizado (SPI)")
+
+                        # Cria o gráfico
                         fig, ax = plt.subplots(figsize=(12, 4))
                         ax.plot(spi_df["AnoMes"].astype(str), spi_df["SPI"], marker="o", linestyle="-")
                         ax.axhline(0, color="black", linestyle="--")
@@ -231,8 +234,13 @@ if uploaded_zip and st.session_state.df_resumo is not None:
                         ax.set_xticklabels(spi_df["AnoMes"].astype(str)[::max(1, len(spi_df) // 12)], rotation=45)
                         fig.tight_layout()
 
-                        st.pyplot(fig)
+                        # Salva o gráfico no buffer ANTES de exibir
+                        fig_spi_bytes = io.BytesIO()
+                        fig.savefig(fig_spi_bytes, format='png', bbox_inches='tight')
+                        fig_spi_bytes.seek(0)
 
+                        # Exibe no Streamlit
+                        st.pyplot(fig)
 
                         st.markdown("#### Estatísticas por mês (SPI)")
                         st.table(estatisticas_spi.reset_index(drop=True))
@@ -265,7 +273,7 @@ if uploaded_zip and st.session_state.df_resumo is not None:
             else:
                 st.warning("Estação selecionada não possui dados disponíveis.")
 
-            # Gerar botão de download do pacote SPI + IDF
+            # --- Gerar botão de download do pacote SPI + IDF ---
             st.write("")
 
             try:
@@ -273,9 +281,6 @@ if uploaded_zip and st.session_state.df_resumo is not None:
 
                 with zipfile.ZipFile(buffer_zip, "w") as zip_file:
                     # 1. Gráfico do SPI
-                    fig_spi_bytes = io.BytesIO()
-                    plt.savefig(fig_spi_bytes, format='png', bbox_inches='tight')
-                    fig_spi_bytes.seek(0)
                     zip_file.writestr("spi_grafico.png", fig_spi_bytes.read())
 
                     # 2. Tabela SPI
@@ -311,6 +316,7 @@ if uploaded_zip and st.session_state.df_resumo is not None:
 
     else:
         st.info("Selecione uma cidade para visualizar a análise SPI e IDF.")
+
 
 
 
