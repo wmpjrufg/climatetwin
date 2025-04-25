@@ -193,7 +193,7 @@ if uploaded_zip and st.session_state.df_resumo is not None:
             popup=f"{row['nome']} ({row['codigo_estacao']})\nSituação: {row['situacao']}"
         ).add_to(m)
 
-    st_folium(m, width=1500, height=500)
+    st_folium(m, width=700, height=500)
 
 
     # --- SPI e IDF para a cidade selecionada ---
