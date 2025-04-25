@@ -1,7 +1,6 @@
 import zipfile
 import os
 import tempfile
-import zipfile
 import folium
 import io
 
@@ -13,8 +12,7 @@ import matplotlib.pyplot as plt
 from streamlit_folium import st_folium
 from codigos_hidro import indice_spi, calculo_precipitacoes, problema_inverso_idf, save_figure_temp
 
-
-st.set_page_config(page_title="Análise de Estações BDMET", layout="wide")
+st.set_page_config(page_title="Análise de Estações BDMEP", layout="wide")
 st.title("Análise de Estações BDMET")
 
 # Inicializa session_state
@@ -58,6 +56,21 @@ if uploaded_zip and not st.session_state.processed_zip:
                         chave, valor = linha.split(':', 1)
                         cabecalho[chave.strip().lower().replace(' ', '_')] = valor.strip()
 
+                df_dados = pd.read_csv(file_path, sep=";", encoding="utf-8", skiprows=9)
+                # print(df_dados.columns.tolist()) 
+                cod = cabecalho.get("codigo_estacao", file)
+                planilhas_completas[cod] = df_dados
+
+                # Calcula porcentagem de falhas (valores nulos) nas colunas selecionadas
+                total_linhas = len(df_dados)
+                def calc_falha_percent(col):
+                    return (df_dados[col].isna().sum() / total_linhas * 100) if col in df_dados.columns else None
+
+                falha_precipitacao = calc_falha_percent("PRECIPITACAO TOTAL, DIARIO (AUT)(mm)")
+                falha_temperatura = calc_falha_percent("TEMPERATURA MEDIA, DIARIA (AUT)(°C)")
+                falha_umidade = calc_falha_percent("UMIDADE RELATIVA DO AR, MEDIA DIARIA (AUT)(%)")
+                falha_vento = calc_falha_percent("VENTO, VELOCIDADE MEDIA DIARIA (AUT)(m/s)")
+
                 resumo.append({
                     "arquivo": file,
                     "nome": cabecalho.get("nome", ""),
@@ -67,12 +80,12 @@ if uploaded_zip and not st.session_state.processed_zip:
                     "altitude": float(cabecalho.get("altitude", 0)),
                     "situacao": cabecalho.get("situacao", ""),
                     "data_inicial": cabecalho.get("data_inicial", ""),
-                    "data_final": cabecalho.get("data_final", "")
+                    "data_final": cabecalho.get("data_final", ""),
+                    "falha de precipitação (%)": falha_precipitacao,
+                    "falha de temperatura média (%)": falha_temperatura,
+                    "falha de umidade relativa (%)": falha_umidade,
+                    "falha de velocidade do vento (%)": falha_vento
                 })
-
-                df_dados = pd.read_csv(file_path, sep=";", encoding="utf-8", skiprows=9)
-                cod = cabecalho.get("codigo_estacao", file)
-                planilhas_completas[cod] = df_dados
 
             except Exception as e:
                 st.error(f"Erro ao processar {file}: {e}")
@@ -102,6 +115,7 @@ if uploaded_zip and st.session_state.df_resumo is not None:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+
     # --- Mapa com Folium
     st.subheader("Mapa das Estações")
     st.write("Filtros para o Mapa")
@@ -109,8 +123,8 @@ if uploaded_zip and st.session_state.df_resumo is not None:
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        estados = sorted(df_resumo['nome'].unique())
-        filtro_nome = st.selectbox("Filtrar por cidade (opcional):", ["Todos"] + estados)
+        cidades_codigos = sorted([f"{nome} ({cod})" for nome, cod in zip(df_resumo['nome'], df_resumo['codigo_estacao'])])
+        filtro_nome = st.selectbox("Filtrar por cidade (opcional):", ["Todos"] + cidades_codigos)
 
     with col2:
         situacoes = df_resumo["situacao"].dropna().unique()
@@ -122,11 +136,17 @@ if uploaded_zip and st.session_state.df_resumo is not None:
         filtro_altitude = st.slider("Filtrar por altitude (m):", min_value=alt_min, max_value=alt_max,
                                     value=(alt_min, alt_max))
 
-    # Aplica os filtros no DataFrame
+    # --- Aplica os filtros no DataFrame
     df_filtrado = df_resumo.copy()
 
     if filtro_nome != "Todos":
-        df_filtrado = df_filtrado[df_filtrado["nome"] == filtro_nome]
+        # Extrai só o nome da cidade da opção selecionada
+        cidade_nome = filtro_nome.split(' (')[0]
+        cod_estacao = filtro_nome.split('(')[-1].replace(')', '')
+        df_filtrado = df_filtrado[
+            (df_filtrado["nome"] == cidade_nome) &
+            (df_filtrado["codigo_estacao"] == cod_estacao)
+        ]
 
     if filtro_situacao:
         df_filtrado = df_filtrado[df_filtrado["situacao"].isin(filtro_situacao)]
@@ -146,8 +166,22 @@ if uploaded_zip and st.session_state.df_resumo is not None:
 
     m = folium.Map(location=[-15, -55], zoom_start=4)
 
+    # Função para definir a cor baseada na situação
+    def cor_situacao(situacao):
+        situacao = situacao.lower()
+        if situacao == "operante":
+            return "green"
+        elif situacao == "desativada":
+            return "red"
+        elif situacao == "pane":
+            return "orange"
+        elif situacao == "fechada":
+            return "darkblue"
+        else:
+            return "gray"  # qualquer outra situação
+
     for _, row in gdf.iterrows():
-        cor = "green" if row["situacao"].lower() == "operante" else "red"
+        cor = cor_situacao(row["situacao"])
         folium.CircleMarker(
             location=[row["latitude"], row["longitude"]],
             radius=5,
@@ -155,127 +189,137 @@ if uploaded_zip and st.session_state.df_resumo is not None:
             fill=True,
             fill_opacity=0.8,
             fill_color=cor,
-            tooltip=row["codigo_estacao"],
-            popup=f"{row['nome']} ({row['situacao']})"
+            tooltip=f"{row['nome']} ({row['codigo_estacao']}) - {row['situacao']}",
+            popup=f"{row['nome']} ({row['codigo_estacao']})\nSituação: {row['situacao']}"
         ).add_to(m)
 
     st_folium(m, width=1500, height=500)
+
 
     # --- SPI e IDF para a cidade selecionada ---
     st.subheader("Análise SPI e Curva IDF para a cidade selecionada")
 
     if filtro_nome != "Todos":
-        cod_estacao = df_resumo[df_resumo["nome"] == filtro_nome]["codigo_estacao"].values[0]
-        df_estacao = planilhas_completas.get(cod_estacao)
+        try:
+            # Extrai código da estação e nome da cidade do filtro
+            cod_estacao = filtro_nome.split("(")[-1].replace(")", "").strip()
+            nome_cidade = filtro_nome.split("(")[0].strip()
 
-        if df_estacao is not None:
-            df_spi = df_estacao.copy()
+            df_estacao = planilhas_completas.get(cod_estacao)
 
-            # Tenta encontrar automaticamente as colunas relevantes
-            col_data = next((col for col in df_spi.columns if "data" in col.lower()), None)
-            col_prec = next((col for col in df_spi.columns if "precip" in col.lower()), None)
+            if df_estacao is not None:
+                df_spi = df_estacao.copy()
 
-            if col_data and col_prec:
-                df_spi = df_spi[[col_data, col_prec]]
-                df_spi.columns = ['Data Medição', 'Precipitação Total Diária (mm)']
+                # Tenta encontrar automaticamente as colunas relevantes
+                col_data = next((col for col in df_spi.columns if "data" in col.lower()), None)
+                col_prec = next((col for col in df_spi.columns if "precip" in col.lower()), None)
 
+                if col_data and col_prec:
+                    df_spi = df_spi[[col_data, col_prec]]
+                    df_spi.columns = ['Data Medição', 'Precipitação Total Diária (mm)']
+
+                    try:
+                        spi_df, estatisticas_spi = indice_spi(df_spi)
+
+                        st.markdown("### Índice de Precipitação Padronizado (SPI)")
+                        fig, ax = plt.subplots(figsize=(12, 4))
+                        ax.plot(spi_df["AnoMes"].astype(str), spi_df["SPI"], marker="o", linestyle="-")
+                        ax.axhline(0, color="black", linestyle="--")
+                        ax.set_title(f"SPI - {filtro_nome}")
+                        ax.set_ylabel("SPI")
+                        ax.set_xticks(range(0, len(spi_df), max(1, len(spi_df) // 12)))
+                        ax.set_xticklabels(spi_df["AnoMes"].astype(str)[::max(1, len(spi_df) // 12)], rotation=45)
+                        fig.tight_layout()
+
+                        st.pyplot(fig)
+
+
+                        st.markdown("#### Estatísticas por mês (SPI)")
+                        st.table(estatisticas_spi.reset_index(drop=True))
+
+                    except Exception as e:
+                        st.error(f"Erro ao calcular SPI: {e}")
+                else:
+                    st.warning("Colunas de Data ou Precipitação não foram encontradas na estação selecionada.")
+
+                # --- Cálculo IDF ---
                 try:
-                    spi_df, estatisticas_spi = indice_spi(df_spi)
+                    hmax_df, preciptacao_df, intensidade_df, df_longo, media, desvio = calculo_precipitacoes(df_estacao)
+                    a, b, c, d = problema_inverso_idf(df_longo)
 
-                    st.markdown("### Índice de Precipitação Padronizado (SPI)")
-                    plt.figure(figsize=(12, 4))
-                    plt.plot(spi_df["AnoMes"].astype(str), spi_df["SPI"], marker="o", linestyle="-")
-                    plt.axhline(0, color="black", linestyle="--")
-                    plt.title(f"SPI - {filtro_nome}")
-                    plt.ylabel("SPI")
-                    plt.xticks(
-                        ticks=range(0, len(spi_df), max(1, len(spi_df) // 12)),
-                        labels=spi_df["AnoMes"].astype(str)[::max(1, len(spi_df) // 12)],
-                        rotation=45
+                    st.write("")
+                    st.markdown(f"**Parâmetros IDF (ajustados via otimização):**")
+                    st.markdown(f"- a = `{a:.4f}`")
+                    st.markdown(f"- b = `{b:.4f}`")
+                    st.markdown(f"- c = `{c:.4f}`")
+                    st.markdown(f"- d = `{d:.4f}`")
+
+                    equacao_idf = (
+                        r"I = \frac{{{:.2f} \cdot T_r^{{{:.2f}}}}}{{(t + {:.2f})^{{{:.2f}}}}}"
+                        .format(a, b, c, d)
                     )
-                    plt.tight_layout()
-                    st.pyplot(plt)
-
-                    st.markdown("#### Estatísticas por mês (SPI)")
-                    st.table(estatisticas_spi.reset_index(drop=True))
+                    st.latex(equacao_idf)
 
                 except Exception as e:
-                    st.error(f"Erro ao calcular SPI: {e}")
+                    st.error(f"Erro ao calcular curva IDF: {e}")
             else:
-                st.warning("Colunas de Data ou Precipitação não foram encontradas na estação selecionada.")
+                st.warning("Estação selecionada não possui dados disponíveis.")
 
-            # --- Cálculo IDF ---
+            # Gerar botão de download do pacote SPI + IDF
+            st.write("")
+
             try:
-                # st.markdown("### Curva IDF (Intensidade x Duração x Frequência)")
-                hmax_df, preciptacao_df, intensidade_df, df_longo, media, desvio = calculo_precipitacoes(df_estacao)
-                a, b, c, d = problema_inverso_idf(df_longo)
-                
-                st.write("")
-                st.markdown(f"**Parâmetros IDF (ajustados via otimização):**")
-                st.markdown(f"- a = `{a:.4f}`")
-                st.markdown(f"- b = `{b:.4f}`")
-                st.markdown(f"- c = `{c:.4f}`")
-                st.markdown(f"- d = `{d:.4f}`")
+                buffer_zip = io.BytesIO()
 
-                equacao_idf = (
-                    r"I = \frac{{{:.2f} \cdot T_r^{{{:.2f}}}}}{{(t + {:.2f})^{{{:.2f}}}}}"
-                    .format(a, b, c, d)
+                with zipfile.ZipFile(buffer_zip, "w") as zip_file:
+                    # 1. Gráfico do SPI
+                    fig_spi_bytes = io.BytesIO()
+                    plt.savefig(fig_spi_bytes, format='png', bbox_inches='tight')
+                    fig_spi_bytes.seek(0)
+                    zip_file.writestr("spi_grafico.png", fig_spi_bytes.read())
+
+                    # 2. Tabela SPI
+                    buffer_excel = io.BytesIO()
+                    estatisticas_spi.to_excel(buffer_excel, index=False)
+                    buffer_excel.seek(0)
+                    zip_file.writestr("estatisticas_spi.xlsx", buffer_excel.read())
+
+                    # 3. Parâmetros IDF
+                    txt_idf = f"""Parâmetros IDF ajustados para {filtro_nome}:
+
+    a = {a:.6f}
+    b = {b:.6f}
+    c = {c:.6f}
+    d = {d:.6f}
+    """
+                    zip_file.writestr("parametros_idf.txt", txt_idf)
+
+                buffer_zip.seek(0)
+
+                st.download_button(
+                    label="Download dos resultados SPI + IDF",
+                    data=buffer_zip,
+                    file_name=f"analise_spi_idf_{filtro_nome.replace(' ', '_').replace('(', '').replace(')', '')}.zip",
+                    mime="application/zip"
                 )
-                st.latex(equacao_idf)
 
             except Exception as e:
-                st.error(f"Erro ao calcular curva IDF: {e}")
-        else:
-            st.warning("Estação selecionada não possui dados disponíveis.")
-
-        # Gerar botão de download do pacote SPI + IDF
-        st.write("")
-
-        try:
-            buffer_zip = io.BytesIO()
-
-            with zipfile.ZipFile(buffer_zip, "w") as zip_file:
-                # 1. Gráfico do SPI
-                fig_spi_bytes = io.BytesIO()
-                plt.savefig(fig_spi_bytes, format='png', bbox_inches='tight')
-                fig_spi_bytes.seek(0)
-                zip_file.writestr("spi_grafico.png", fig_spi_bytes.read())
-
-                # 2. Tabela SPI
-                buffer_excel = io.BytesIO()
-                estatisticas_spi.to_excel(buffer_excel, index=False)
-                buffer_excel.seek(0)
-                zip_file.writestr("estatisticas_spi.xlsx", buffer_excel.read())
-
-                # 3. Parâmetros IDF
-                txt_idf = f"""Parâmetros IDF ajustados para {filtro_nome}:
-
-        a = {a:.6f}
-        b = {b:.6f}
-        c = {c:.6f}
-        d = {d:.6f}
-        """
-                zip_file.writestr("parametros_idf.txt", txt_idf)
-
-            buffer_zip.seek(0)
-
-            st.download_button(
-                label="Download dos resultados SPI + IDF",
-                data=buffer_zip,
-                file_name=f"analise_spi_idf_{filtro_nome}.zip",
-                mime="application/zip"
-            )
+                st.error(f"Erro ao gerar arquivos para download: {e}")
 
         except Exception as e:
-            st.error(f"Erro ao gerar arquivos para download: {e}")
+            st.error(f"Erro ao processar a cidade selecionada: {e}")
 
     else:
         st.info("Selecione uma cidade para visualizar a análise SPI e IDF.")
 
 
+
     # --- Seleção e download dos dados completos
     st.subheader("Exportar Dados")
-    selecao = st.multiselect("Escolha pelo código da estação:", df_resumo["codigo_estacao"].dropna().unique())
+    opcoes_rotuladas = [f"{row['nome']} ({row['codigo_estacao']})" for _, row in df_resumo.iterrows()]
+    mapa_codigo_por_label = {f"{row['nome']} ({row['codigo_estacao']})": row['codigo_estacao'] for _, row in df_resumo.iterrows()}
+    selecao_rotulada = st.multiselect("Escolha a estação:", opcoes_rotuladas)
+    selecao = [mapa_codigo_por_label[r] for r in selecao_rotulada if r in mapa_codigo_por_label]
 
     if selecao:
         if ("ultima_selecao" not in st.session_state) or (selecao != st.session_state.ultima_selecao):
@@ -290,6 +334,7 @@ if uploaded_zip and st.session_state.df_resumo is not None:
             st.session_state.ultima_selecao = selecao
 
         st.dataframe(st.session_state.df_final.head())
+
 
         st.download_button(
             "Baixar dados das estações selecionadas",
