@@ -240,7 +240,10 @@ if uploaded_zip and st.session_state.df_resumo is not None:
                         fig_spi_bytes.seek(0)
 
                         # Exibe no Streamlit
-                        st.pyplot(fig)
+                        if not spi_df.empty:
+                            st.pyplot(fig)
+                        else:
+                            st.warning("O gráfico SPI não pôde ser gerado. Verifique se há dados disponíveis para a estação.")
 
                         st.markdown("#### Estatísticas por mês (SPI)")
                         st.table(estatisticas_spi.reset_index(drop=True))
