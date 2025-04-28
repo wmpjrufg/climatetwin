@@ -25,7 +25,19 @@ if "processed_zip" not in st.session_state:
 
 uploaded_zip = st.file_uploader("Envie o arquivo .zip com as planilhas de estações:", type="zip")
 
-# Processa o zip apenas 1x
+if uploaded_zip is None and st.session_state.processed_zip:
+    st.session_state.df_resumo = None
+    st.session_state.planilhas_completas = {}
+    st.session_state.processed_zip = False
+    if "buffer_resumo" in st.session_state:
+        del st.session_state.buffer_resumo
+    if "ultima_selecao" in st.session_state:
+        del st.session_state.ultima_selecao
+    if "df_final" in st.session_state:
+        del st.session_state.df_final
+    if "buffer_final" in st.session_state:
+        del st.session_state.buffer_final
+
 if uploaded_zip and not st.session_state.processed_zip:
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = os.path.join(tmpdir, "uploaded.zip")
@@ -133,8 +145,17 @@ if uploaded_zip and st.session_state.df_resumo is not None:
     with col3:
         alt_min = float(df_resumo["altitude"].min())
         alt_max = float(df_resumo["altitude"].max())
-        filtro_altitude = st.slider("Filtrar por altitude (m):", min_value=alt_min, max_value=alt_max,
-                                    value=(alt_min, alt_max))
+
+        if alt_min == alt_max:
+            alt_min -= 1
+            alt_max += 1
+
+        filtro_altitude = st.slider(
+            "Filtrar por altitude (m):",
+            min_value=alt_min,
+            max_value=alt_max,
+            value=(alt_min, alt_max)
+        )
 
     # --- Aplica os filtros no DataFrame
     df_filtrado = df_resumo.copy()
