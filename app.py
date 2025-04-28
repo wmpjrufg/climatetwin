@@ -13,7 +13,7 @@ from streamlit_folium import st_folium
 from codigos_hidro import indice_spi, calculo_precipitacoes, problema_inverso_idf, save_figure_temp
 
 st.set_page_config(page_title="Análise de Estações BDMEP", layout="wide")
-st.title("Análise de Estações BDMET")
+st.title("Análise de Estações BDMEP")
 
 # Inicializa session_state
 if "df_resumo" not in st.session_state:
