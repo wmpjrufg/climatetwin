@@ -10,12 +10,22 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 from streamlit_folium import st_folium
+from pathlib import Path
+from io import BytesIO
 from codigos_hidro import indice_spi, calculo_precipitacoes, problema_inverso_idf, save_figure_temp
 
 st.set_page_config(page_title="Análise de Estações BDMEP", layout="wide")
 st.title("Análise de Estações BDMEP")
 
-# Inicializa session_state
+caminho_arquivo = Path("ultima_sincro.txt")
+if caminho_arquivo.exists():
+    with open(caminho_arquivo, "r", encoding="utf-8") as f:
+        data = f.read().strip()
+    
+    st.success(f"Data da última sincronização: {data}")
+else:
+    st.warning("Arquivo 'ultima_sincro.txt' não encontrado.")
+
 if "df_resumo" not in st.session_state:
     st.session_state.df_resumo = None
 if "planilhas_completas" not in st.session_state:
@@ -23,7 +33,13 @@ if "planilhas_completas" not in st.session_state:
 if "processed_zip" not in st.session_state:
     st.session_state.processed_zip = False
 
-uploaded_zip = st.file_uploader("Envie o arquivo .zip com as planilhas de estações:", type="zip")
+# uploaded_zip = st.file_uploader("Envie o arquivo .zip com as planilhas de estações:", type="zip")
+
+caminho_fixo = "./BD/$2a$10$GPEMhanSCXsA4ZZn9M7nWe69AV4i79XA7TZa5j5VxeqGZrwNfvlC.zip"
+
+# Lê o arquivo fixo como se fosse o uploaded_zip
+with open(caminho_fixo, "rb") as f:
+    uploaded_zip = BytesIO(f.read()) 
 
 if uploaded_zip is None and st.session_state.processed_zip:
     st.session_state.df_resumo = None
