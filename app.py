@@ -177,7 +177,23 @@ if df_resumo is not None:
             tooltip=f"{row['nome']} ({row['codigo_estacao']}) - {row['situacao']}"
         ).add_to(m)
 
-    st_folium(m, width=1500, height=500)
+    with st.container():
+        st.markdown(
+            """
+            <style>
+            .folium-map {
+                height: 500px !important;
+                overflow: hidden !important;
+            }
+            iframe {
+                height: 500px !important;
+                max-height: 500px !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        st_folium(m, width=1500, height=500)
 
     st.subheader("Análise SPI e Curva IDF para a cidade selecionada")
 
