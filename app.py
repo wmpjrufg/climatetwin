@@ -25,13 +25,7 @@ if caminho_arquivo.exists():
 else:
     st.warning("Arquivo 'ultima_sincro.txt' não encontrado.")
 
-st.write("""
-         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed porta libero at felis efficitur pulvinar non ut sapien. Integer non molestie eros, vel egestas ex. Integer blandit, ex id bibendum commodo, dui ipsum accumsan sapien, eget gravida odio est eu mi. Nam id ipsum quis lorem ultricies elementum. Aenean sed vestibulum ex. Nam quis turpis auctor nisl pharetra vehicula. Donec aliquet sem ipsum, a fermentum dolor faucibus nec.
-
-        Nam ultrices, nisl id posuere placerat, mauris ante facilisis tortor, at laoreet justo magna tempus enim. Praesent egestas pulvinar neque, nec bibendum nibh dapibus nec. Phasellus auctor justo ut ante auctor, at accumsan ipsum scelerisque. Fusce eget consequat risus. Integer porta sodales arcu, a condimentum nisl dignissim vitae. Ut congue posuere orci, ac rhoncus libero luctus et. Mauris non nunc tempor, semper lectus et, tempor magna. Aliquam aliquet mauris ut vehicula blandit. Nulla commodo eu neque ut laoreet. Quisque volutpat ullamcorper mauris non sollicitudin.      
-    """)
-
-
+# ================= FUNÇÕES =================
 @st.cache_data(show_spinner="Carregando dados do ZIP...")
 def processar_zip(uploaded_zip_bytes):
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -210,6 +204,14 @@ with open(caminho_fixo, "rb") as f:
 if uploaded_zip:
     df_resumo, planilhas_completas, nome_pasta = processar_zip(uploaded_zip)
     st.success(f"Pasta processada: `{nome_pasta}`")
+
+
+st.write("""
+         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed porta libero at felis efficitur pulvinar non ut sapien. Integer non molestie eros, vel egestas ex. Integer blandit, ex id bibendum commodo, dui ipsum accumsan sapien, eget gravida odio est eu mi. Nam id ipsum quis lorem ultricies elementum. Aenean sed vestibulum ex. Nam quis turpis auctor nisl pharetra vehicula. Donec aliquet sem ipsum, a fermentum dolor faucibus nec.
+
+        Nam ultrices, nisl id posuere placerat, mauris ante facilisis tortor, at laoreet justo magna tempus enim. Praesent egestas pulvinar neque, nec bibendum nibh dapibus nec. Phasellus auctor justo ut ante auctor, at accumsan ipsum scelerisque. Fusce eget consequat risus. Integer porta sodales arcu, a condimentum nisl dignissim vitae. Ut congue posuere orci, ac rhoncus libero luctus et. Mauris non nunc tempor, semper lectus et, tempor magna. Aliquam aliquet mauris ut vehicula blandit. Nulla commodo eu neque ut laoreet. Quisque volutpat ullamcorper mauris non sollicitudin.      
+    """)
+
 
 if df_resumo is not None:
     st.subheader("Resumo das Estações")
