@@ -93,10 +93,67 @@ def calcular_idf(df_estacao):
     a, b, c, d = problema_inverso_idf(df_longo)
     return (hmax_df, preciptacao_df, intensidade_df, df_longo, media, desvio), (a, b, c, d)
 
-# Leitura do arquivo fixo
-df_resumo, planilhas_completas, nome_pasta = None, {}, None
-caminho_fixo = "./BD/$2a$10$GPEMhanSCXsA4ZZn9M7nWe69AV4i79XA7TZa5j5VxeqGZrwNfvlC.zip"
+def gerar_zip_spi_idf(cidades_selecionadas, planilhas_completas, calcular_spi, calcular_idf):
+    buffer_zip_total = io.BytesIO()
 
+    with zipfile.ZipFile(buffer_zip_total, "w") as zip_total:
+        for entrada in cidades_selecionadas:
+            nome_cidade, cod_estacao = entrada.split(" (")
+            cod_estacao = cod_estacao.replace(")", "").strip()
+            df_estacao = planilhas_completas.get(cod_estacao)
+
+            if df_estacao is None:
+                continue
+
+            col_data = next((col for col in df_estacao.columns if "data" in col.lower()), None)
+            col_prec = next((col for col in df_estacao.columns if "precip" in col.lower()), None)
+            if not col_data or not col_prec:
+                continue
+
+            df_spi = df_estacao[[col_data, col_prec]].copy()
+            df_spi.columns = ['Data Medição', 'Precipitação Total Diária (mm)']
+            spi_df, estatisticas_spi = calcular_spi(df_spi)
+            (_, _, _, df_longo, _, _), (a, b, c, d) = calcular_idf(df_estacao)
+
+            fig, ax = plt.subplots(figsize=(12, 4))
+            ax.plot(spi_df["AnoMes"].astype(str), spi_df["SPI"], marker="o")
+            ax.axhline(0, color="black", linestyle="--")
+            ax.set_title(f"SPI - {nome_cidade} ({cod_estacao})")
+            ax.set_ylabel("SPI")
+            ax.set_xticks(range(0, len(spi_df), max(1, len(spi_df) // 12)))
+            ax.set_xticklabels(spi_df["AnoMes"].astype(str)[::max(1, len(spi_df) // 12)], rotation=45)
+            fig.tight_layout()
+            fig_bytes = io.BytesIO()
+            fig.savefig(fig_bytes, format='png', bbox_inches='tight')
+            fig_bytes.seek(0)
+            plt.close(fig)
+
+            pasta_nome = f"{nome_cidade.strip().replace(' ', '_')}_{cod_estacao}"
+            zip_total.writestr(f"{pasta_nome}/spi_grafico.png", fig_bytes.read())
+
+            buffer_excel = io.BytesIO()
+            estatisticas_spi.to_excel(buffer_excel, index=False)
+            buffer_excel.seek(0)
+            zip_total.writestr(f"{pasta_nome}/estatisticas_spi.xlsx", buffer_excel.read())
+
+            txt_idf = f"""Parâmetros IDF ajustados para {nome_cidade} ({cod_estacao}):
+
+a = {a:.6f}
+b = {b:.6f}
+c = {c:.6f}
+d = {d:.6f}
+"""
+            zip_total.writestr(f"{pasta_nome}/parametros_idf.txt", txt_idf)
+
+    buffer_zip_total.seek(0)
+    zip_path = "/mnt/data/analise_spi_idf_por_cidade.zip"
+    with open(zip_path, "wb") as f:
+        f.write(buffer_zip_total.read())
+    return zip_path
+
+# ================= INÍCIO DA INTERFACE =================
+
+caminho_fixo = "./BD/$2a$10$GPEMhanSCXsA4ZZn9M7nWe69AV4i79XA7TZa5j5VxeqGZrwNfvlC.zip"
 with open(caminho_fixo, "rb") as f:
     uploaded_zip = BytesIO(f.read()) 
 
@@ -157,15 +214,9 @@ if df_resumo is not None:
     gdf = gpd.GeoDataFrame(df_geo, geometry=gpd.points_from_xy(df_geo.longitude, df_geo.latitude), crs="EPSG:4326")
 
     m = folium.Map(location=[-15, -55], zoom_start=4)
-
     def cor_situacao(situacao):
         situacao = situacao.lower()
-        return {
-            "operante": "green",
-            "desativada": "red",
-            "pane": "orange",
-            "fechada": "darkblue"
-        }.get(situacao, "gray")
+        return {"operante": "green", "desativada": "red", "pane": "orange", "fechada": "darkblue"}.get(situacao, "gray")
 
     for _, row in gdf.iterrows():
         folium.CircleMarker(
@@ -195,95 +246,21 @@ if df_resumo is not None:
         )
         st_folium(m, width=1500, height=500)
 
-    st.subheader("Análise SPI e Curva IDF para a cidade selecionada")
+    # ================= SPI + IDF MÚLTIPLAS CIDADES =================
+    st.subheader("Análise SPI e Curva IDF por múltiplas cidades")
 
-    if filtro_nome != "Todos":
-        cod_estacao = filtro_nome.split("(")[-1].replace(")", "").strip()
-        nome_cidade = filtro_nome.split("(")[0].strip()
-        df_estacao = planilhas_completas.get(cod_estacao)
+    lista_opcoes_spi_idf = [f"{row['nome']} ({row['codigo_estacao']})" for _, row in df_resumo.iterrows()]
+    selecionadas_spi_idf = st.multiselect("Escolha as cidades/estações:", lista_opcoes_spi_idf)
 
-        if df_estacao is not None:
-            col_data = next((col for col in df_estacao.columns if "data" in col.lower()), None)
-            col_prec = next((col for col in df_estacao.columns if "precip" in col.lower()), None)
+    if selecionadas_spi_idf and st.button("Gerar pacote SPI + IDF para selecionadas"):
+        with st.spinner("Processando análises para as cidades selecionadas..."):
+            zip_path = gerar_zip_spi_idf(selecionadas_spi_idf, planilhas_completas, calcular_spi, calcular_idf)
 
-            if col_data and col_prec:
-                df_spi = df_estacao[[col_data, col_prec]]
-                df_spi.columns = ['Data Medição', 'Precipitação Total Diária (mm)']
-                spi_df, estatisticas_spi = calcular_spi(df_spi)
-
-                st.markdown("### Índice de Precipitação Padronizado (SPI)")
-                fig, ax = plt.subplots(figsize=(12, 4))
-                ax.plot(spi_df["AnoMes"].astype(str), spi_df["SPI"], marker="o")
-                ax.axhline(0, color="black", linestyle="--")
-                ax.set_title(f"SPI - {filtro_nome}")
-                ax.set_ylabel("SPI")
-                ax.set_xticks(range(0, len(spi_df), max(1, len(spi_df) // 12)))
-                ax.set_xticklabels(spi_df["AnoMes"].astype(str)[::max(1, len(spi_df)//12)], rotation=45)
-                fig.tight_layout()
-                fig_spi_bytes = io.BytesIO()
-                fig.savefig(fig_spi_bytes, format='png', bbox_inches='tight')
-                fig_spi_bytes.seek(0)
-                st.pyplot(fig)
-                st.markdown("#### Estatísticas por mês (SPI)")
-                st.table(estatisticas_spi.reset_index(drop=True))
-
-                (hmax_df, preciptacao_df, intensidade_df, df_longo, media, desvio), (a, b, c, d) = calcular_idf(df_estacao)
-                st.markdown(f"**Parâmetros IDF (ajustados via otimização):**\n- a = `{a:.4f}`\n- b = `{b:.4f}`\n- c = `{c:.4f}`\n- d = `{d:.4f}`")
-                st.latex(rf"I = \frac{{{a:.2f} \cdot T_r^{{{b:.2f}}}}}{{(t + {c:.2f})^{{{d:.2f}}}}}")
-
-                if st.button("Gerar pacote SPI + IDF"):
-                    with st.spinner("Gerando pacote para download..."):
-                        buffer_zip = io.BytesIO()
-                        with zipfile.ZipFile(buffer_zip, "w") as zip_file:
-                            fig_spi_bytes.seek(0)
-                            zip_file.writestr("spi_grafico.png", fig_spi_bytes.read())
-                            buffer_excel = io.BytesIO()
-                            estatisticas_spi.to_excel(buffer_excel, index=False)
-                            buffer_excel.seek(0)
-                            zip_file.writestr("estatisticas_spi.xlsx", buffer_excel.read())
-                            txt_idf = f"""Parâmetros IDF ajustados para {filtro_nome}:
-
-a = {a:.6f}
-b = {b:.6f}
-c = {c:.6f}
-d = {d:.6f}"""
-                            zip_file.writestr("parametros_idf.txt", txt_idf)
-                        buffer_zip.seek(0)
-                        st.download_button(
-                            label="Download dos resultados SPI + IDF",
-                            data=buffer_zip,
-                            file_name=f"analise_spi_idf_{filtro_nome.replace(' ', '_').replace('(', '').replace(')', '')}.zip",
-                            mime="application/zip")
-            else:
-                st.warning("Colunas de Data ou Precipitação não foram encontradas na estação selecionada.")
-        else:
-            st.warning("Estação selecionada não possui dados disponíveis.")
-    else:
-        st.info("Selecione uma cidade para visualizar a análise SPI e IDF.")
-
-    # --- Seleção e download dos dados completos
-    st.subheader("Exportar Dados")
-    df_ordenado = df_resumo.sort_values("codigo_estacao")
-    opcoes_rotuladas = [f"{row['nome']} ({row['codigo_estacao']})" for _, row in df_ordenado.iterrows()]
-    mapa_codigo_por_label = {f"{row['nome']} ({row['codigo_estacao']})": row['codigo_estacao'] for _, row in df_ordenado.iterrows()}
-    selecao_rotulada = st.multiselect("Escolha a estação:", opcoes_rotuladas)
-    selecao = [mapa_codigo_por_label[r] for r in selecao_rotulada if r in mapa_codigo_por_label]
-
-    if selecao:
-        if ("ultima_selecao" not in st.session_state) or (selecao != st.session_state.ultima_selecao):
-            dfs = [planilhas_completas[cod] for cod in selecao if cod in planilhas_completas]
-            df_final = pd.concat(dfs, ignore_index=True)
-            buffer_final = io.BytesIO()
-            df_final.to_excel(buffer_final, index=False)
-            buffer_final.seek(0)
-
-            st.session_state.df_final = df_final
-            st.session_state.buffer_final = buffer_final
-            st.session_state.ultima_selecao = selecao
-
-        st.download_button(
-            "Baixar dados das estações selecionadas",
-            data=st.session_state.buffer_final,
-            file_name="dados_selecionados.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        st.success("Pacote gerado com sucesso!")
+        with open(zip_path, "rb") as f:
+            st.download_button(
+                label="Download do ZIP com resultados por cidade",
+                data=f,
+                file_name="analise_spi_idf_por_cidade.zip",
+                mime="application/zip"
+            )
