@@ -8,3 +8,4 @@ shapely
 openpyxl
 scipy
 matplotlib
+scikit-learn
