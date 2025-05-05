@@ -101,67 +101,121 @@ def calculo_precipitacoes(df_inmet):
 
 def problema_inverso_idf(df_longo):
     """
-    Ajusta os parâmetros a, b, c, d da equação IDF com Levenberg-Marquardt (LM),
-    tratando manualmente os problemas numéricos sem usar bounds.
+    Ajusta os parâmetros a, b, c, d da equação IDF com o método Levenberg-Marquardt (LM),
+    com tratamento robusto de valores inválidos.
     """
-    t_r = df_longo['tr'].values.astype(float)
-    t_c = df_longo['td (min)'].astype(str).str.replace(',', '.', regex=False).astype(float).values
-    y_obs = df_longo['y_obs (mm/h)'].values.astype(float)
+    try:
+        # Pré-processamento
+        df_longo = df_longo.dropna(subset=['tr', 'td (min)', 'y_obs (mm/h)']).copy()
 
-    def residuals(params, t_r, t_c, y_obs):
-        a, b, c, d = params
+        if len(df_longo) < 5:
+            raise ValueError("Poucos dados para ajuste")
 
-        # Prevenir bases negativas ou nulas em potenciações
-        t_r_safe = np.where(t_r <= 0, 1e-6, t_r)
-        t_c_safe = np.where((t_c + c) <= 0, 1e-6, t_c + c)
+        t_r = df_longo['tr'].astype(float).values
+        t_c = df_longo['td (min)'].astype(str).str.replace(',', '.', regex=False).astype(float).values
+        y_obs = df_longo['y_obs (mm/h)'].astype(float).values
 
-        try:
-            y_pred = (a * t_r_safe ** b) / (t_c_safe ** d)
-        except Exception:
-            y_pred = np.full_like(y_obs, 1e6)  # Penalização em caso de erro
+        def residuals(params, t_r, t_c, y_obs):
+            a, b, c, d = params
 
-        residual = y_pred - y_obs
+            # Proteção contra erros de potenciação
+            t_r_safe = np.where(t_r > 0, t_r, 1e-6)
+            t_c_safe = np.where((t_c + c) > 0, t_c + c, 1e-6)
 
-        # Tratamento final para NaNs e infinitos
-        return np.nan_to_num(residual, nan=1e6, posinf=1e6, neginf=-1e6)
+            try:
+                y_pred = (a * t_r_safe ** b) / (t_c_safe ** d)
+            except Exception:
+                y_pred = np.full_like(y_obs, 1e6)
 
-    result = least_squares(
-        residuals,
-        x0=[500, 0.1, 5, 0.3],  # Chute inicial
-        args=(t_r, t_c, y_obs),
-        method='lm',
-        max_nfev=1000
-    )
+            return np.nan_to_num(y_pred - y_obs, nan=1e6, posinf=1e6, neginf=-1e6)
 
-    return result.x  # retorna os parâmetros a, b, c, d
+        # Ajuste LM 
+        result = least_squares(
+            residuals,
+            x0=[500, 0.1, 5, 0.3],
+            args=(t_r, t_c, y_obs),
+            method='lm',
+            max_nfev=1000
+        )
 
+        if not np.all(np.isfinite(result.x)):
+            raise ValueError("Parâmetros não numéricos")
+
+        return result.x  
+    
+    except Exception as e:
+        print(f"[problema_inverso_idf] Erro durante ajuste: {e}")
+        return [np.nan, np.nan, np.nan, np.nan]
+    
 
 def indice_spi(df_inmet):
     """
     Calcula o SPI mensal com base nos dados diários de precipitação.
+    Aplica validações e proteções para séries incompletas ou inválidas.
     """
     df = df_inmet.copy()
     if 'Unnamed: 2' in df.columns:
         df = df.drop(columns=['Unnamed: 2'])
 
     df.columns = ['Data Medição', 'Precipitação Total Diária (mm)']
-    df['Precipitação Total Diária (mm)'] = df['Precipitação Total Diária (mm)'].astype(str).str.replace(',', '.').astype(float)
+    df['Precipitação Total Diária (mm)'] = df['Precipitação Total Diária (mm)'] \
+        .astype(str).str.replace(',', '.', regex=False).astype(float)
+
     df['Data Medição'] = pd.to_datetime(df['Data Medição'], errors='coerce')
+    df = df.dropna(subset=['Data Medição', 'Precipitação Total Diária (mm)'])
+
+    # Verifica se há dados válidos suficientes
+    if df.empty or df['Precipitação Total Diária (mm)'].le(0).all():
+        raise ValueError("Série de precipitação inválida ou sem valores positivos.")
+
     df['AnoMes'] = df['Data Medição'].dt.to_period('M')
     precip_mensal = df.groupby('AnoMes')['Precipitação Total Diária (mm)'].sum()
 
     spi_mensal = []
     estatisticas = []
+
     for mes in range(1, 13):
         dados_mes = precip_mensal[precip_mensal.index.month == mes]
+
+        if len(dados_mes) < 3 or dados_mes.sum() == 0:
+            # Preencher com NaN se o mês tiver poucos dados
+            spi_mensal.extend([np.nan] * len(dados_mes))
+            estatisticas.append({
+                'Mês': mes,
+                'Média Mensal': np.nan,
+                'q (zeros)': np.nan,
+                'Alpha (shape)': np.nan,
+                'Beta (scale)': np.nan
+            })
+            continue
+
         media = np.mean(dados_mes)
         zeros = (dados_mes == 0).sum()
         positivos = dados_mes[dados_mes > 0]
+
+        if len(positivos) < 2:
+            spi_mensal.extend([np.nan] * len(dados_mes))
+            estatisticas.append({
+                'Mês': mes,
+                'Média Mensal': media,
+                'q (zeros)': zeros / len(dados_mes),
+                'Alpha (shape)': np.nan,
+                'Beta (scale)': np.nan
+            })
+            continue
+
         prob_zeros = zeros / len(dados_mes)
-        shape, loc, scale = gamma.fit(positivos, floc=0)
-        cdf = gamma.cdf(dados_mes, shape, loc=loc, scale=scale)
-        cdf_adjusted = prob_zeros + (1 - prob_zeros) * cdf
-        spi_mes = norm.ppf(cdf_adjusted)
+
+        try:
+            shape, loc, scale = gamma.fit(positivos, floc=0)
+            cdf = gamma.cdf(dados_mes, shape, loc=loc, scale=scale)
+            cdf = np.clip(cdf, 1e-10, 1 - 1e-10)  # evita ±inf
+            cdf_adjusted = prob_zeros + (1 - prob_zeros) * cdf
+            spi_mes = norm.ppf(cdf_adjusted)
+        except Exception:
+            spi_mes = [np.nan] * len(dados_mes)
+            shape, scale = np.nan, np.nan
+
         spi_mensal.extend(spi_mes)
         estatisticas.append({
             'Mês': mes,
@@ -171,9 +225,15 @@ def indice_spi(df_inmet):
             'Beta (scale)': scale
         })
 
-    spi_df = pd.DataFrame({'AnoMes': precip_mensal.index, 'PrecipitaçãoMensal': precip_mensal.values, 'SPI': spi_mensal})
+    spi_df = pd.DataFrame({
+        'AnoMes': precip_mensal.index,
+        'PrecipitaçãoMensal': precip_mensal.values,
+        'SPI': spi_mensal
+    })
+
     estatisticas_df = pd.DataFrame(estatisticas)
     return spi_df, estatisticas_df
+
 
 def save_figure_temp(fig):
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
