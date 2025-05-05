@@ -5,7 +5,7 @@ Inclui cálculo de SPI, IDF, hmax, desagregação de precipitação e ajuste de 
 import tempfile
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
+from scipy.optimize import minimize, least_squares
 from scipy.stats import gamma, norm
 
 def calcular_hmax(media, desvio_padrao, tempo_retorno):
@@ -78,26 +78,63 @@ def calculo_precipitacoes(df_inmet):
 
     return h_max1aux, preciptacao, intensidade, df_longo, media, desvio_padrao
 
-def problema_inverso_idf(df_long):
-    """
-    Ajusta os parâmetros a, b, c, d da equação IDF usando mínimos quadrados.
-    """
-    t_r = df_long['tr'].values
-    t_c = df_long['td (min)'].values
-    y_obs = df_long['y_obs (mm/h)'].values
+# def problema_inverso_idf(df_long):
+#     """
+#     Ajusta os parâmetros a, b, c, d da equação IDF usando mínimos quadrados.
+#     """
+#     t_r = df_long['tr'].values
+#     t_c = df_long['td (min)'].values
+#     y_obs = df_long['y_obs (mm/h)'].values
 
-    def model_function(params, t_r, t_c):
+#     def model_function(params, t_r, t_c):
+#         a, b, c, d = params
+#         return (a * t_r ** b) / (t_c + c)**d
+
+#     def error_function(params, t_r, t_c, y_obs):
+#         y_pred = model_function(params, t_r, t_c)
+#         return np.mean((y_pred - y_obs) ** 2)
+
+#     initial_guess = [1, 1, 1, 1]
+#     bounds = [(1e-5, None)] * 4
+#     result = minimize(error_function, initial_guess, args=(t_r, t_c, y_obs), bounds=bounds)
+#     return tuple(result.x)
+
+def problema_inverso_idf(df_longo):
+    """
+    Ajusta os parâmetros a, b, c, d da equação IDF com Levenberg-Marquardt (LM),
+    tratando manualmente os problemas numéricos sem usar bounds.
+    """
+    t_r = df_longo['tr'].values.astype(float)
+    t_c = df_longo['td (min)'].astype(str).str.replace(',', '.', regex=False).astype(float).values
+    y_obs = df_longo['y_obs (mm/h)'].values.astype(float)
+
+    def residuals(params, t_r, t_c, y_obs):
         a, b, c, d = params
-        return (a * t_r ** b) / (t_c + c)**d
 
-    def error_function(params, t_r, t_c, y_obs):
-        y_pred = model_function(params, t_r, t_c)
-        return np.mean((y_pred - y_obs) ** 2)
+        # Prevenir bases negativas ou nulas em potenciações
+        t_r_safe = np.where(t_r <= 0, 1e-6, t_r)
+        t_c_safe = np.where((t_c + c) <= 0, 1e-6, t_c + c)
 
-    initial_guess = [1, 1, 1, 1]
-    bounds = [(1e-5, None)] * 4
-    result = minimize(error_function, initial_guess, args=(t_r, t_c, y_obs), bounds=bounds)
-    return tuple(result.x)
+        try:
+            y_pred = (a * t_r_safe ** b) / (t_c_safe ** d)
+        except Exception:
+            y_pred = np.full_like(y_obs, 1e6)  # Penalização em caso de erro
+
+        residual = y_pred - y_obs
+
+        # Tratamento final para NaNs e infinitos
+        return np.nan_to_num(residual, nan=1e6, posinf=1e6, neginf=-1e6)
+
+    result = least_squares(
+        residuals,
+        x0=[500, 0.1, 5, 0.3],  # Chute inicial
+        args=(t_r, t_c, y_obs),
+        method='lm',
+        max_nfev=1000
+    )
+
+    return result.x  # retorna os parâmetros a, b, c, d
+
 
 def indice_spi(df_inmet):
     """

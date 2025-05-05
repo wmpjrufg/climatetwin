@@ -10,6 +10,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 from streamlit_folium import st_folium
+from sklearn.metrics import r2_score
 from pathlib import Path
 from io import BytesIO
 from codigos_hidro import indice_spi, calculo_precipitacoes, problema_inverso_idf
@@ -95,8 +96,10 @@ def calcular_idf(df_estacao):
     return (hmax_df, preciptacao_df, intensidade_df, df_longo, media, desvio), (a, b, c, d)
 
 
+
 def gerar_zip_spi_idf(cidades_selecionadas, planilhas_completas, calcular_spi, calcular_idf):
     buffer_zip_total = io.BytesIO()
+    lista_resumo_r2 = []
 
     with zipfile.ZipFile(buffer_zip_total, "w") as zip_total:
         for entrada in cidades_selecionadas:
@@ -150,9 +153,36 @@ d = {d:.6f}
 """
                 zip_total.writestr(f"{pasta_nome}/parametros_idf.txt", txt_idf)
 
+                r2_por_tr = {}
+                for tr_val, grupo in df_longo.groupby('tr'):
+                    td_tr = grupo['td (min)'].astype(str).str.replace(',', '.', regex=False).astype(float).values
+                    y_true = grupo['y_obs (mm/h)'].values
+                    y_pred = (a * tr_val ** b) / ((td_tr + c) ** d)
+                    r2 = r2_score(y_true, y_pred)
+                    r2_por_tr[f"r2 (tr curva {int(tr_val)} anos)"] = r2
+
+                r2_medio = sum(r2_por_tr.values()) / len(r2_por_tr)
+
+                lista_resumo_r2.append({
+                    "Estação": nome_cidade,
+                    "Código": cod_estacao,
+                    "a": a, "b": b, "c": c, "d": d,
+                    **r2_por_tr,
+                    "r2 médio": r2_medio
+                })
+
             except Exception as e:
+                import streamlit as st
                 st.warning(f"Falha ao processar {entrada}: {e}")
                 continue
+
+        # Salvar resumo_idf_r2.xlsx no nível superior do ZIP
+        if lista_resumo_r2:
+            df_resumo = pd.DataFrame(lista_resumo_r2)
+            buffer_resumo = io.BytesIO()
+            df_resumo.to_excel(buffer_resumo, index=False)
+            buffer_resumo.seek(0)
+            zip_total.writestr("resumo_idf_r2.xlsx", buffer_resumo.read())
 
     buffer_zip_total.seek(0)
 
