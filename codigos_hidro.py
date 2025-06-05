@@ -68,7 +68,7 @@ def calculo_precipitacoes(df_inmet):
 
     tempo_retorno = [2, 5, 10, 15, 20, 25, 50, 100, 250, 500, 1000]
     h_max1 = [calcular_hmax(media, desvio_padrao, tr) for tr in tempo_retorno]
-    h_max1aux = pd.DataFrame({'tempo de retorno (anos)': tempo_retorno, 'Pmax diária (mm)': h_max1})
+    h_max1aux = pd.DataFrame({'tempo de retorno (anos)': tempo_retorno, 'Hmax diria (mm)': h_max1})
 
     preciptacao = desagragacao_preciptacao(h_max1)
     intensidade = conversao_intensidade(preciptacao)
