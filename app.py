@@ -227,7 +227,7 @@ def gerar_zip_dados_brutos(selecao_rotulada, planilhas_completas):
 
 # ================= INÍCIO DA INTERFACE =================
 
-caminho_fixo = "./BD/$2a$10$1Q7uCy08zprNmqdl7gMruyzbBQbUtSWFu0RZ6Tu1Mb5RElg2u...zip"
+caminho_fixo = "./BD/$2a$10$1Q7uCy08zprNmqdl7gMruyzbBQbUtSWFu0RZ6Tu1Mb5RElg2u.zip"
 with open(caminho_fixo, "rb") as f:
     uploaded_zip = BytesIO(f.read()) 
 
